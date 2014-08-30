@@ -13,8 +13,14 @@ if(!defined("IN_MYBB"))
 }
 
 $plugins->add_hook("member_do_login_start", "ili_login");
-$plugins->add_hook("member_do_register_start", "ili_login");
-$plugins->add_hook("lostpw", "ili_lost_password");
+
+$plugins->add_hook("member_register_agreement", "ili_register_disable");
+$plugins->add_hook("member_register_start", "ili_register_disable");
+$plugins->add_hook("member_do_register_start", "ili_register_disable");
+
+$plugins->add_hook("member_resetpassword_start", "ili_lost_password_disable");
+$plugins->add_hook("member_lostpw", "ili_lost_password_disable");
+$plugins->add_hook("member_do_lostpw_start", "ili_lost_password_disable");
 
 
 
@@ -222,10 +228,20 @@ function ili_get_login($username)
 	return false;
 }
 
+
+function ili_register_disable() {
+	error("Cannot register with LDAP integrator enabled. Please <a href=\"member.php?action=login\">login</a> with your login details.");
+}
+
+
+function ili_lost_password_disable() {
+	error("Cannot recover password through these forums. Please contact a system admin for more details");
+}
+
+
 if (!function_exists("pam_auth")) {
 	function pam_auth($username, $password) {
-		return true;
-		if ($username == "dm1911" || $username == "txl11" || $username == "test") {
+		if ($username == "dm1911" || $username == "test") {
 			return true;
 		}
 		return false;
