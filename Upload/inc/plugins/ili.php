@@ -22,6 +22,13 @@ $plugins->add_hook("member_resetpassword_start", "ili_lost_password_disable");
 $plugins->add_hook("member_lostpw", "ili_lost_password_disable");
 $plugins->add_hook("member_do_lostpw_start", "ili_lost_password_disable");
 
+$plugins->add_hook("postbit", "ili_postbit");
+$plugins->add_hook("postbit_pm", "ili_postbit");
+$plugins->add_hook("postbit_prev", "ili_postbit");
+$plugins->add_hook("postbit_announcement", "ili_postbit");
+$plugins->add_hook("member_profile_end", "ili_member_profile_end");
+$plugins->add_hook("global_start", "ili_global_start");
+
 
 
 function ili_info()
@@ -31,19 +38,41 @@ function ili_info()
 		"description" => "Integrates the login with Imperial College.",
 		"website" => "http://www.dario-ml.com/",
 		"author" => "Dario Magliocchetti",
-		"version" => "1.0",
+		"version" => "1.1",
 		"compatibility"	=> "16*"
 	);
 }
 
+
+function ili_install ()
+{
+	global $db;
+	$db->write_query("ALTER TABLE `".TABLE_PREFIX."users` ADD `ldap_first_name` VARCHAR(50) NULL DEFAULT NULL");
+	$db->write_query("ALTER TABLE `".TABLE_PREFIX."users` ADD `ldap_last_name` VARCHAR(50) NULL DEFAULT NULL");
+}
+
+function ili_uninstall ()
+{
+	global $db;	
+	$db->write_query("ALTER TABLE `".TABLE_PREFIX."users` DROP `ldap_first_name`");
+	$db->write_query("ALTER TABLE `".TABLE_PREFIX."users` DROP `ldap_last_name`");
+
+}
+
+function ili_is_installed() 
+{
+	global $db;
+	return $db->field_exists("ldap_first_name", "users");
+}
+
 function ili_activate ()
 {
-			
+	
 }
 
 function ili_deactivate ()
 {
-							
+			
 }
 
 /* 
@@ -94,6 +123,13 @@ function ili_login()
 		else
 		{
 			$user = ili_get_login($mybb->input['username']);
+
+			if ($user['ldap_first_name'] == null) {
+				$names = ldap_get_names($user['username']);
+				if (is_array($names)) {
+					$db->update_query("users", array("ldap_first_name" => $names[0], "ldap_last_name" => $names[1]), '`uid` = ' . $user['uid']);
+				}
+			}
 
 			my_setcookie('loginattempts', 1);
 			$db->delete_query("sessions", "ip='".$db->escape_string($session->ipaddress)."' AND sid != '".$session->sid."'");
@@ -177,8 +213,6 @@ function ili_register($username) {
 		"dstcorrection" => 1
 	);
 
-
-
 	$userhandler->set_data($user);
 
 	if(!$userhandler->validate_user())
@@ -199,16 +233,16 @@ function ili_get_login($username)
 	switch($mybb->settings['username_method'])
 	{
 		case 0:
-			$query = $db->simple_select("users", "uid,username,password,salt,loginkey,coppauser,usergroup", "LOWER(username)='".$username."'", array('limit' => 1));
+			$query = $db->simple_select("users", "uid,username,password,salt,loginkey,coppauser,usergroup,ldap_first_name,ldap_last_name", "LOWER(username)='".$username."'", array('limit' => 1));
 			break;
 		case 1:
-			$query = $db->simple_select("users", "uid,username,password,salt,loginkey,coppauser,usergroup", "LOWER(email)='".$username."'", array('limit' => 1));
+			$query = $db->simple_select("users", "uid,username,password,salt,loginkey,coppauser,usergroup,ldap_first_name,ldap_last_name", "LOWER(email)='".$username."'", array('limit' => 1));
 			break;
 		case 2:
-			$query = $db->simple_select("users", "uid,username,password,salt,loginkey,coppauser,usergroup", "LOWER(username)='".$username."' OR LOWER(email)='".$username."'", array('limit' => 1));
+			$query = $db->simple_select("users", "uid,username,password,salt,loginkey,coppauser,usergroup,ldap_first_name,ldap_last_name", "LOWER(username)='".$username."' OR LOWER(email)='".$username."'", array('limit' => 1));
 			break;
 		default:
-			$query = $db->simple_select("users", "uid,username,password,salt,loginkey,coppauser,usergroup", "LOWER(username)='".$username."'", array('limit' => 1));
+			$query = $db->simple_select("users", "uid,username,password,salt,loginkey,coppauser,usergroup,ldap_first_name,ldap_last_name", "LOWER(username)='".$username."'", array('limit' => 1));
 			break;
 	}
 
@@ -239,12 +273,41 @@ function ili_lost_password_disable() {
 }
 
 
+function ili_postbit($post) {
+	if($post['uid'] != 0 && isset($post['userusername']))
+	{
+		$post['username'] = $post['ldap_first_name'] . " " . $post['ldap_last_name'];
+		$post['profilelink_plain'] = get_profile_link($post['uid']);
+		$post['username_formatted'] = format_name($post['username'], $post['usergroup'], $post['displaygroup']);
+		$post['profilelink'] = build_profile_link($post['username_formatted'], $post['uid']);
+	}
+	return $post;
+}
+
+function ili_member_profile_end() {
+	global $formattedname, $memprofile;
+	$formattedname = format_name($memprofile['ldap_first_name'] . " " . $memprofile['ldap_last_name'], $memprofile['usergroup'], $memprofile['displaygroup']);
+}
+
+function ili_global_start() {
+	global $lang, $mybb;
+	if ($mybb->user['uid']) {
+		$lang->welcome_back = $lang->sprintf($lang->welcome_back, build_profile_link($mybb->user['ldap_first_name'], $mybb->user['uid']), $lastvisit);
+	}
+}
+
 if (!function_exists("pam_auth")) {
 	function pam_auth($username, $password) {
 		if ($username == "dm1911" || $username == "test") {
 			return true;
 		}
 		return false;
+	}
+}
+
+if (!function_exists("ldap_get_names")) {
+	function ldap_get_names($username) {
+		return array($username, "Baker");
 	}
 }
 
